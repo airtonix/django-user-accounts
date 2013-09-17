@@ -25,6 +25,8 @@ from account.models import SignupCode, EmailAddress, EmailConfirmation, Account,
 from account.utils import default_redirect, user_display
 
 
+
+
 class SignupView(FormView):
 
     template_name = "account/signup.html"
@@ -114,7 +116,7 @@ class SignupView(FormView):
         self.create_account(form)
         self.after_signup(form)
         if settings.ACCOUNT_EMAIL_CONFIRMATION_EMAIL and not email_address.verified:
-            email_address.send_confirmation()
+            email_address.send_confirmation(request=self.request)
         if settings.ACCOUNT_EMAIL_CONFIRMATION_REQUIRED and not email_address.verified:
             return self.email_confirmation_required_response()
         else:
@@ -474,17 +476,12 @@ class ChangePasswordView(FormView):
         return default_redirect(self.request, fallback_url, **kwargs)
 
     def send_email(self, user):
-        protocol = getattr(settings, "DEFAULT_HTTP_PROTOCOL", "http")
-        current_site = get_current_site(self.request)
-        ctx = {
-            "user": user,
-            "protocol": protocol,
-            "current_site": current_site,
-        }
-        subject = render_to_string("account/email/password_change_subject.txt", ctx)
-        subject = "".join(subject.splitlines())
-        message = render_to_string("account/email/password_change.txt", ctx)
-        send_mail(subject, message, settings.DEFAULT_FROM_EMAIL, [user.email])
+        email_backend.send_rendered_email(recipients=[user.email],
+                                  sender=settings.DEFAULT_FROM_EMAIL,
+                                  subject_template="account/email/password_change_subject.txt",
+                                  body_template="account/email/password_change.txt",
+                                  context={ "user": user})
+
 
 
 class PasswordResetView(FormView):
@@ -510,25 +507,18 @@ class PasswordResetView(FormView):
         return self.response_class(**response_kwargs)
 
     def send_email(self, email):
-        protocol = getattr(settings, "DEFAULT_HTTP_PROTOCOL", "http")
-        current_site = get_current_site(self.request)
         for user in User.objects.filter(email__iexact=email):
             uid = int_to_base36(user.id)
             token = self.make_token(user)
-            password_reset_url = "{0}://{1}{2}".format(
-                protocol,
-                current_site.domain,
-                reverse("account_password_reset_token", kwargs=dict(uidb36=uid, token=token))
-            )
-            ctx = {
-                "user": user,
-                "current_site": current_site,
-                "password_reset_url": password_reset_url,
-            }
-            subject = render_to_string("account/email/password_reset_subject.txt", ctx)
-            subject = "".join(subject.splitlines())
-            message = render_to_string("account/email/password_reset.txt", ctx)
-            send_mail(subject, message, settings.DEFAULT_FROM_EMAIL, [user.email])
+            url = reverse("account_password_reset_token", kwargs=dict(uidb36=uid, token=token))
+            email_backend.send_rendered_email(recipients=[user.email],
+                                      sender=settings.DEFAULT_FROM_EMAIL,
+                                      subject_template="account/email/password_reset_subject.txt",
+                                      body_template="account/email/password_reset.txt",
+                                      context={ "user": user,
+                                                "current_site": current_site,
+                                                "password_reset_url": self.request.build_absolute_uri(url),
+                                        })
 
     def make_token(self, user):
         return self.token_generator.make_token(user)

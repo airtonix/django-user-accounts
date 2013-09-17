@@ -44,6 +44,7 @@ class AccountAppConf(AppConf):
     EMAIL_CONFIRMATION_AUTHENTICATED_REDIRECT_URL = None
     SETTINGS_REDIRECT_URL = "account_settings"
     NOTIFY_ON_PASSWORD_CHANGE = True
+    EMAIL_SENDER_CALLBACK = "account.callbacks.send_rendered_email"
     DELETION_MARK_CALLBACK = "account.callbacks.account_delete_mark"
     DELETION_EXPUNGE_CALLBACK = "account.callbacks.account_delete_expunge"
     DELETION_EXPUNGE_HOURS = 48
@@ -52,6 +53,9 @@ class AccountAppConf(AppConf):
         (code, get_language_info(code).get("name_local"))
         for code, lang in settings.LANGUAGES
     ]
+
+    def configure_email_sender_callback(self, value):
+        return load_path_attr(value)
 
     def configure_deletion_mark_callback(self, value):
         return load_path_attr(value)

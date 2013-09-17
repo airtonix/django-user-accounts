@@ -6,7 +6,7 @@ from account.views import SignupView, LoginView, LogoutView, DeleteView
 from account.views import ConfirmEmailView
 from account.views import ChangePasswordView, PasswordResetView, PasswordResetTokenView
 from account.views import SettingsView
-
+from account import email
 
 urlpatterns = patterns("",
     url(r"^signup/$", SignupView.as_view(), name="account_signup"),

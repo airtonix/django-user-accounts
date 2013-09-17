@@ -13,6 +13,5 @@ signup_code_used = Signal(providing_args=["signup_code_result"])
 
 email_confirmed = Signal(providing_args=["email_address"])
 email_confirmation_sent = Signal(providing_args=["confirmation"])
-email_confirmation_requested = Signal(providing_args=["confirmation"])
 
 password_changed = Signal(providing_args=["user"])

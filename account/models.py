@@ -4,7 +4,6 @@ import datetime
 import operator
 import urllib
 
-from django.core.mail import send_mail
 from django.core.urlresolvers import reverse
 from django.db import models, transaction
 from django.db.models import Q
@@ -12,7 +11,7 @@ from django.db.models.signals import post_save
 from django.dispatch import receiver
 from django.template.loader import render_to_string
 from django.utils import timezone, translation
-from django.utils.translation import gettext_lazy as _
+from django.utils.translation import ugettext_lazy as _
 
 from django.contrib.auth.models import User, AnonymousUser
 from django.contrib.sites.models import Site
@@ -23,8 +22,10 @@ from account import signals
 from account.conf import settings
 from account.fields import TimeZoneField
 from account.managers import EmailAddressManager, EmailConfirmationManager
-from account.signals import signup_code_sent, signup_code_used
 from account.utils import random_token
+
+
+EmailSender = settings.ACCOUNT_EMAIL_SENDER_CALLBACK
 
 
 class Account(models.Model):
@@ -94,7 +95,7 @@ def user_post_save(sender, **kwargs):
     After User.save is called we check to see if it was a created user. If so,
     we check if the User object wants account creation. If all passes we
     create an Account object.
-    
+
     We only run on user creation to avoid having to check for existence on
     each call to User.save.
     """
@@ -197,28 +198,20 @@ class SignupCode(models.Model):
         result.signup_code = self
         result.user = user
         result.save()
-        signup_code_used.send(sender=result.__class__, signup_code_result=result)
+        signals.signup_code_used.send(sender=result.__class__, signup_code_result=result)
 
-    def send(self, **kwargs):
-        protocol = getattr(settings, "DEFAULT_HTTP_PROTOCOL", "http")
-        current_site = kwargs["site"] if "site" in kwargs else Site.objects.get_current()
-        signup_url = "{0}://{1}{2}?{3}".format(
-            protocol,
-            current_site.domain,
-            reverse("account_signup"),
-            urllib.urlencode({"code": self.code})
-        )
-        ctx = {
-            "signup_code": self,
-            "current_site": current_site,
-            "signup_url": signup_url,
-        }
-        subject = render_to_string("account/email/invite_user_subject.txt", ctx)
-        message = render_to_string("account/email/invite_user.txt", ctx)
-        send_mail(subject, message, settings.DEFAULT_FROM_EMAIL, [self.email])
+    def send(self):
+        EmailSender(recipients=[self.email],
+                    sender=settings.DEFAULT_FROM_EMAIL,
+                    subject_template="account/email/invite_user_subject.txt",
+                    body_template="account/email/invite_user.txt",
+                    context={"signup_code": self,
+                             "signup_url": "{url}?{code}".format(url=request.build_absolute_uri(reverse("account_signup")),
+                                                                code=urllib.urlencode({"code": self.code}))
+                            })
         self.sent = timezone.now()
         self.save()
-        signup_code_sent.send(sender=SignupCode, signup_code=self)
+        signals.signup_code_sent.send(sender=self.__class__, signup_code=self)
 
 
 class SignupCodeResult(models.Model):
@@ -263,14 +256,27 @@ class EmailAddress(models.Model):
         self.user.save()
         return True
 
-    def send_confirmation(self):
+    def send_confirmation(self, request):
         confirmation = EmailConfirmation.create(self)
-        # confirmation.send()
-        signals.email_confirmation_sent.send(sender=self.__class__, confirmation=confirmation)
+        EmailSender(recipients=[confirmation.email_address.email],
+                    sender=settings.DEFAULT_FROM_EMAIL,
+                    subject_template="account/email/email_confirmation_subject.txt",
+                    body_template="account/email/email_confirmation_message.txt",
+                    context={"email_address": confirmation.email_address,
+                            "user": confirmation.email_address.user,
+                            "activate_url": request.build_absolute_uri(reverse("account_confirm_email",
+                                                                       args=[confirmation.key])),
+                            "key": confirmation.key,
+                            })
+
+        confirmation.sent = timezone.now()
+        confirmation.save()
+        signals.email_confirmation_sent.send(sender=confirmation.__class__,
+                                             confirmation=confirmation)
 
         return confirmation
 
-    def change(self, new_email, confirm=True):
+    def change(self, new_email, confirm=True, request=None):
         """
         Given a new email address, change self and re-confirm.
         """
@@ -281,7 +287,7 @@ class EmailAddress(models.Model):
             self.verified = False
             self.save()
             if confirm:
-                self.send_confirmation()
+                self.send_confirmation(request)
 
 
 class EmailConfirmation(models.Model):
@@ -318,29 +324,6 @@ class EmailConfirmation(models.Model):
             email_address.save()
             signals.email_confirmed.send(sender=self.__class__, email_address=email_address)
             return email_address
-
-    def send(self, **kwargs):
-        current_site = kwargs["site"] if "site" in kwargs else Site.objects.get_current()
-        protocol = getattr(settings, "DEFAULT_HTTP_PROTOCOL", "http")
-        activate_url = "{0}://{1}{2}".format(
-            protocol,
-            current_site.domain,
-            reverse("account_confirm_email", args=[self.key])
-        )
-        ctx = {
-            "email_address": self.email_address,
-            "user": self.email_address.user,
-            "activate_url": activate_url,
-            "current_site": current_site,
-            "key": self.key,
-        }
-        subject = render_to_string("account/email/email_confirmation_subject.txt", ctx)
-        subject = "".join(subject.splitlines()) # remove superfluous line breaks
-        message = render_to_string("account/email/email_confirmation_message.txt", ctx)
-        send_mail(subject, message, settings.DEFAULT_FROM_EMAIL, [self.email_address.email])
-        self.sent = timezone.now()
-        self.save()
-        signals.email_confirmation_sent.send(sender=self.__class__, confirmation=self)
 
 
 class AccountDeletion(models.Model):
