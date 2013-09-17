@@ -516,9 +516,9 @@ class PasswordResetView(FormView):
                                       subject_template="account/email/password_reset_subject.txt",
                                       body_template="account/email/password_reset.txt",
                                       context={ "user": user,
-                                                "current_site": current_site,
                                                 "password_reset_url": self.request.build_absolute_uri(url),
                                         })
+
 
     def make_token(self, user):
         return self.token_generator.make_token(user)
