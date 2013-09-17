@@ -25,6 +25,7 @@ from account.models import SignupCode, EmailAddress, EmailConfirmation, Account,
 from account.utils import default_redirect, user_display
 
 
+EmailSender = settings.ACCOUNT_EMAIL_SENDER_CALLBACK
 
 
 class SignupView(FormView):
@@ -476,11 +477,11 @@ class ChangePasswordView(FormView):
         return default_redirect(self.request, fallback_url, **kwargs)
 
     def send_email(self, user):
-        email_backend.send_rendered_email(recipients=[user.email],
-                                  sender=settings.DEFAULT_FROM_EMAIL,
-                                  subject_template="account/email/password_change_subject.txt",
-                                  body_template="account/email/password_change.txt",
-                                  context={ "user": user})
+        EmailSender(recipients=[user.email],
+                    sender=settings.DEFAULT_FROM_EMAIL,
+                    subject_template="account/email/password_change_subject.txt",
+                    body_template="account/email/password_change.txt",
+                    context={ "user": user})
 
 
 
@@ -511,13 +512,13 @@ class PasswordResetView(FormView):
             uid = int_to_base36(user.id)
             token = self.make_token(user)
             url = reverse("account_password_reset_token", kwargs=dict(uidb36=uid, token=token))
-            email_backend.send_rendered_email(recipients=[user.email],
-                                      sender=settings.DEFAULT_FROM_EMAIL,
-                                      subject_template="account/email/password_reset_subject.txt",
-                                      body_template="account/email/password_reset.txt",
-                                      context={ "user": user,
-                                                "password_reset_url": self.request.build_absolute_uri(url),
-                                        })
+            EmailSender(recipients=[user.email],
+                        sender=settings.DEFAULT_FROM_EMAIL,
+                        subject_template="account/email/password_reset_subject.txt",
+                        body_template="account/email/password_reset.txt",
+                        context={"user": user,
+                                 "password_reset_url": self.request.build_absolute_uri(url),
+                        })
 
 
     def make_token(self, user):
