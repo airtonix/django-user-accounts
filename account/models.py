@@ -265,7 +265,9 @@ class EmailAddress(models.Model):
 
     def send_confirmation(self):
         confirmation = EmailConfirmation.create(self)
-        confirmation.send()
+        # confirmation.send()
+        signals.email_confirmation_sent.send(sender=self.__class__, confirmation=confirmation)
+
         return confirmation
 
     def change(self, new_email, confirm=True):
