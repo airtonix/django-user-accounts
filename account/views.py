@@ -616,6 +616,10 @@ class SettingsView(LoginRequiredMixin, FormView):
             "level": messages.SUCCESS,
             "text": _("Account settings updated.")
         },
+        "email_confirmation_sent": {
+            "level": messages.INFO,
+            "text": _("Confirmation email sent to {email}.")
+        },
     }
 
     def get_form_class(self):
@@ -623,6 +627,7 @@ class SettingsView(LoginRequiredMixin, FormView):
         # to initialize self with a request in a known good state (of course
         # this only works with a FormView)
         self.primary_email_address = EmailAddress.objects.get_primary(self.request.user)
+        print "self.primary_email_address", self.primary_email_address
         return super(SettingsView, self).get_form_class()
 
     def get_initial(self):
@@ -649,17 +654,25 @@ class SettingsView(LoginRequiredMixin, FormView):
 
     def update_email(self, form, confirm=None):
         user = self.request.user
+        email = form.cleaned_data["email"].strip()
         if confirm is None:
             confirm = settings.ACCOUNT_EMAIL_CONFIRMATION_EMAIL
+        confirmation_message = self.messages.get('email_confirmation_sent')
+        if confirm and confirmation_message:
+            messages.add_message(
+                self.request,
+                confirmation_message["level"],
+                confirmation_message["text"].format(**{"email": email})
+            )
         # @@@ handle multiple emails per user
-        email = form.cleaned_data["email"].strip()
         if not self.primary_email_address:
             user.email = email
             EmailAddress.objects.add_email(self.request.user, email, primary=True, confirm=confirm)
             user.save()
+
         else:
             if email != self.primary_email_address.email:
-                self.primary_email_address.change(email, confirm=confirm)
+                self.primary_email_address.change(email, confirm=confirm, request=self.request)
 
     def get_context_data(self, **kwargs):
         ctx = kwargs
